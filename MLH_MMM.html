@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MLH Materials and Man-Power Manager</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; margin: 0; padding: 0; background-color: #f4f7f9; color: #333; }
+        .container { max-width: 900px; margin: 20px auto; padding: 20px; background-color: #fff; border-radius: 10px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
+        h1, h2 { color: #2c3e50; text-align: center; }
+        .role-selection, .dashboard { padding: 20px; text-align: center; }
+        .role-button { display: inline-block; padding: 15px 30px; margin: 10px; font-size: 1.1em; font-weight: bold; border-radius: 8px; border: none; cursor: pointer; transition: all 0.3s ease; }
+        .role-button.admin { background-color: #3498db; color: #fff; }
+        .role-button.foreman { background-color: #e74c3c; color: #fff; }
+        .role-button.employee { background-color: #2ecc71; color: #fff; }
+        .role-button:hover { transform: translateY(-3px); box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15); }
+        .tab-menu { display: flex; justify-content: center; margin-bottom: 20px; }
+        .tab-button { padding: 12px 20px; margin: 0 5px; background-color: #ecf0f1; border: none; cursor: pointer; border-radius: 5px 5px 0 0; font-size: 1em; transition: background-color 0.3s; }
+        .tab-button.active { background-color: #fff; border-bottom: 3px solid #3498db; }
+        .tab-content { display: none; padding: 20px 0; border-top: 2px solid #ecf0f1; }
+        .tab-content.active { display: block; }
+        form { background-color: #f9f9f9; padding: 20px; border-radius: 8px; }
+        form input, form select, form button { width: 100%; padding: 10px; margin-bottom: 10px; border-radius: 5px; border: 1px solid #ddd; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 12px; border: 1px solid #ddd; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .status-badge { padding: 5px 10px; border-radius: 20px; font-weight: bold; font-size: 0.8em; }
+        .status-badge.pending { background-color: #f1c40f; color: #fff; }
+        .status-badge.in-transit { background-color: #3498db; color: #fff; }
+        .status-badge.delivered { background-color: #2ecc71; color: #fff; }
+        .status-badge.unregistered { background-color: #95a5a6; color: #fff; }
+        .back-button { position: absolute; top: 10px; left: 10px; font-size: 1em; cursor: pointer; color: #7f8c8d; }
+        .alert-box { padding: 15px; margin-bottom: 20px; border-radius: 8px; font-weight: bold; }
+        .alert-box.success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .alert-box.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        #foreman-jobs { display: flex; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .job-card { flex: 0 0 300px; margin: 10px; padding: 15px; border: 1px solid #ddd; border-radius: 8px; background-color: #fafafa; position: relative; }
+        .flashing { animation: flash 1s infinite alternate; }
+        @keyframes flash { from { box-shadow: 0 0 5px 2px #2ecc71; } to { box-shadow: 0 0 10px 4px #2ecc71; } }
+        .three-panel-display { display: flex; overflow-x: scroll; scroll-snap-type: x mandatory; }
+        .three-panel-display > div { flex: 1 0 100%; scroll-snap-align: start; padding: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="role-selection" class="role-selection">
+            <h1>MLH Materials and Man-Power Manager</h1>
+            <h2>Select Your Role</h2>
+            <button class="role-button admin" onclick="selectRole('admin')">Admin</button>
+            <button class="role-button foreman" onclick="selectRole('foreman')">Foreman</button>
+            <button class="role-button employee" onclick="selectRole('employee')">Receiving Employee</button>
+        </div>
+
+        <div id="dashboard-container" class="dashboard" style="display: none;">
+            <button class="back-button" onclick="goBackToRoleSelection()">← Change Role</button>
+            <h1 id="dashboard-title"></h1>
+            <div id="admin-dashboard" class="dashboard-content" style="display: none;">
+                <div class="tab-menu">
+                    <button class="tab-button active" onclick="showTab('requests-tab', this)">Requests</button>
+                    <button class="tab-button" onclick="showTab('materials-tab', this)">Materials</button>
+                    <button class="tab-button" onclick="showTab('users-tab', this)">Users</button>
+                    <button class="tab-button" onclick="showTab('inventory-tab', this)">Inventory</button>
+                    <button class="tab-button" onclick="showTab('accounting-tab', this)">Accounting</button>
+                    <button class="tab-button" onclick="showTab('legacy-tab', this)">Legacy</button>
+                </div>
+
+                <div id="requests-tab" class="tab-content active">
+                    <h2>Incoming Material Requests</h2>
+                    <table id="requests-table">
+                        <thead>
+                            <tr>
+                                <th>Foreman</th>
+                                <th>Site</th>
+                                <th>Material</th>
+                                <th>Quantity</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+
+                <div id="materials-tab" class="tab-content">
+                    <h2>Register New Material</h2>
+                    <form id="material-form">
+                        <input type="text" id="material-name" placeholder="Material Name" required>
+                        <input type="text" id="material-unit" placeholder="Unit (e.g., bags, yards)" required>
+                        <input type="number" id="material-price" placeholder="Price per Unit (US$)" step="0.01" required>
+                        <button type="submit">Add Material</button>
+                    </form>
+                    <h3>Registered Materials</h3>
+                    <table id="materials-table">
+                        <thead>
+                            <tr>
+                                <th>Material</th>
+                                <th>Unit</th>
+                                <th>Price per Unit</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+
+                <div id="users-tab" class="tab-content">
+                    <h2>Registered App Users</h2>
+                    <table id="users-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Role</th>
+                                <th>User ID</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+
+                <div id="inventory-tab" class="tab-content">
+                    <h2>Material Inventory</h2>
+                    <form id="inventory-form">
+                        <select id="inventory-material-select" required></select>
+                        <input type="number" id="inventory-quantity" placeholder="Quantity" required>
+                        <button type="submit">Update Inventory</button>
+                    </form>
+                    <table id="inventory-table">
+                        <thead>
+                            <tr>
+                                <th>Material</th>
+                                <th>Current Stock</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+
+                <div id="accounting-tab" class="tab-content">
+                    <h2>Accounting Report</h2>
+                    <p>Total Value Requested: <span id="total-requested-value">$0.00</span></p>
+                    <p>Total Value Delivered: <span id="total-delivered-value">$0.00</span></p>
+                    <h3>Material Breakdown</h3>
+                    <table id="accounting-table">
+                        <thead>
+                            <tr>
+                                <th>Material</th>
+                                <th>Requested</th>
+                                <th>Delivered</th>
+                                <th>Value</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+                
+                <div id="legacy-tab" class="tab-content">
+                    <h2>Employee Legacy</h2>
+                    <div id="legacy-user-list"></div>
+                    <div id="legacy-details" style="display: none;">
+                        <h3><span id="legacy-user-name"></span> Performance Summary</h3>
+                        <div id="legacy-report"></div>
+                    </div>
+                </div>
+
+            </div>
+
+            <div id="foreman-dashboard" class="dashboard-content" style="display: none;">
+                <h2>My Job Sites</h2>
+                <div id="foreman-jobs"></div>
+                <div id="new-job-site" style="margin-top: 20px;">
+                    <button onclick="addNewJobSite()">Add New Job Site</button>
+                </div>
+            </div>
+
+            <div id="employee-dashboard" class="dashboard-content" style="display: none;">
+                <h2>My Tasks</h2>
+                <ul id="delivery-list"></ul>
+                <h2>Tasks Completed</h2>
+                <ul id="completed-task-list"></ul>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/8.6.8/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.6.8/firebase-firestore.js"></script>
+
+    <script>
+        // Your Firebase configuration goes here.
+        // It's the same for all users of the app.
+        const firebaseConfig = {
+            apiKey: "YOUR_API_KEY",
+            authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+            projectId: "YOUR_PROJECT_ID",
+            storageBucket: "YOUR_PROJECT_ID.appspot.com",
+            messagingSenderId: "YOUR_SENDER_ID",
+            appId: "YOUR_APP_ID"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        let currentUser = null;
+        let currentUserRole = null;
+        let currentUserId = localStorage.getItem('mlh-user-id') || null;
+
+        function getUniqueId() {
+            if (!currentUserId) {
+                currentUserId = 'user_' + Math.random().toString(36).substr(2, 9);
+                localStorage.setItem('mlh-user-id', currentUserId);
+            }
+            return currentUserId;
+        }
+
+        const appState = {
+            jobSites: {},
+            materials: [],
+            users: {},
+            inventory: {},
+            requests: {},
+            legacy: {}
+        };
+
+        const jobSiteTemplate = {
+            materials: [],
+            manpower: [],
+            tasks: []
+        };
+
+        function selectRole(role) {
+            currentUserRole = role;
+            currentUser = getUniqueId();
+            document.getElementById('role-selection').style.display = 'none';
+            document.getElementById('dashboard-container').style.display = 'block';
+            document.getElementById('dashboard-title').innerText = role.charAt(0).toUpperCase() + role.slice(1) + ' Dashboard';
+            
+            // Show the correct dashboard based on role
+            document.querySelectorAll('.dashboard-content').forEach(el => el.style.display = 'none');
+            document.getElementById(`${role}-dashboard`).style.display = 'block';
+
+            // Start real-time listeners for all roles
+            setupRealtimeListeners();
+        }
+
+        function goBackToRoleSelection() {
+            document.getElementById('role-selection').style.display = 'block';
+            document.getElementById('dashboard-container').style.display = 'none';
+        }
+
+        function setupRealtimeListeners() {
+            // Listen for materials changes
+            db.collection('materials').onSnapshot(snapshot => {
+                snapshot.docChanges().forEach(change => {
+                    appState.materials[change.doc.id] = change.doc.data();
+                });
+                renderMaterials();
+                renderInventorySelect();
+                renderAccountingTable();
+            });
+
+            // Listen for user changes
+            db.collection('users').onSnapshot(snapshot => {
+                snapshot.docChanges().forEach(change => {
+                    appState.users[change.doc.id] = change.doc.data();
+                });
+                renderUsers();
+            });
+
+            // Listen for inventory changes
+            db.collection('inventory').onSnapshot(snapshot => {
+                snapshot.docChanges().forEach(change => {
+                    appState.inventory[change.doc.id] = change.doc.data();
+                });
+                renderInventory();
+                renderAccountingTable();
+            });
+
+            // Listen for requests changes
+            db.collection('requests').onSnapshot(snapshot => {
+                snapshot.docChanges().forEach(change => {
+                    appState.requests[change.doc.id] = { id: change.doc.id, ...change.doc.data() };
+                });
+                renderRequests();
+                renderDeliveryList();
+                renderAccountingTable();
+            });
+
+            // Listen for job sites
+            db.collection('jobSites').onSnapshot(snapshot => {
+                snapshot.docChanges().forEach(change => {
+                    appState.jobSites[change.doc.id] = { id: change.doc.id, ...change.doc.data() };
+                });
+                renderForemanJobs();
+            });
+
+            // Listen for legacy data
+            db.collection('legacy').onSnapshot(snapshot => {
+                snapshot.docChanges().forEach(change => {
+                    appState.legacy[change.doc.id] = { id: change.doc.id, ...change.doc.data() };
+                });
+                renderLegacyUserList();
+            });
+        }
+
+        // --- Admin Functions ---
+        function renderMaterials() {
+            const tableBody = document.querySelector('#materials-table tbody');
+            tableBody.innerHTML = '';
+            Object.keys(appState.materials).forEach(id => {
+                const material = appState.materials[id];
+                const row = `<tr><td>${material.name}</td><td>${material.unit}</td><td>$${material.price}</td></tr>`;
+                tableBody.innerHTML += row;
+            });
+        }
+
+        function renderUsers() {
+            const tableBody = document.querySelector('#users-table tbody');
+            tableBody.innerHTML = '';
+            Object.keys(appState.users).forEach(id => {
+                const user = appState.users[id];
+                const row = `<tr><td>${user.name}</td><td>${user.role}</td><td>${user.id}</td></tr>`;
+                tableBody.innerHTML += row;
+            });
+        }
+        
+        function renderLegacyUserList() {
+            const userListDiv = document.getElementById('legacy-user-list');
+            userListDiv.innerHTML = '<h3>Click on a user to view their legacy report</h3>';
+            Object.keys(appState.users).forEach(id => {
+                const user = appState.users[id];
+                const button = document.createElement('button');
+                button.innerText = user.name;
+                button.onclick = () => renderLegacyReport(user);
+                userListDiv.appendChild(button);
+            });
+        }
+        
+        function renderLegacyReport(user) {
+            const legacyDetailsDiv = document.getElementById('legacy-details');
+            const legacyReportDiv = document.getElementById('legacy-report');
+            const userNameSpan = document.getElementById('legacy-user-name');
+            legacyDetailsDiv.style.display = 'block';
+            userNameSpan.innerText = user.name;
+            legacyReportDiv.innerHTML = '';
+            
+            const userTasks = Object.values(appState.legacy).filter(task => task.userId === user.id);
+            if (userTasks.length > 0) {
+                userTasks.forEach(task => {
+                    const taskItem = document.createElement('div');
+                    taskItem.innerHTML = `<h4>${task.jobSiteName} - Task: ${task.taskName}</h4><p>Completed on: ${new Date(task.timestamp).toLocaleString()}</p><p>Description: ${task.description || 'N/A'}</p>`;
+                    legacyReportDiv.appendChild(taskItem);
+                });
+            } else {
+                legacyReportDiv.innerHTML = '<p>No completed tasks found for this user.</p>';
+            }
+        }
+        
+        function renderInventorySelect() {
+            const select = document.getElementById('inventory-material-select');
+            select.innerHTML = '<option value="">Select Material</option>';
+            Object.keys(appState.materials).forEach(id => {
+                const material = appState.materials[id];
+                select.innerHTML += `<option value="${id}">${material.name} (${material.unit})</option>`;
+            });
+        }
+
+        function renderInventory() {
+            const tableBody = document.querySelector('#inventory-table tbody');
+            tableBody.innerHTML = '';
+            Object.keys(appState.inventory).forEach(id => {
+                const inventory = appState.inventory[id];
+                const material = appState.materials[id] || { name: 'Unknown', unit: '' };
+                const row = `<tr><td>${material.name}</td><td>${inventory.quantity}</td></tr>`;
+                tableBody.innerHTML += row;
+            });
+        }
+
+        function renderRequests() {
+            const tableBody = document.querySelector('#requests-table tbody');
+            tableBody.innerHTML = '';
+            Object.values(appState.requests).forEach(request => {
+                const foremanName = appState.users[request.foremanId]?.name || 'Unknown Foreman';
+                const materialName = request.materialId ? appState.materials[request.materialId]?.name : request.materialName;
+                const actionsHtml = request.materialId ? 
+                    `<button onclick="updateRequestStatus('${request.id}', 'in-transit')">Arrange Delivery</button>` :
+                    `<button onclick="registerAndAssign('${request.id}')">Register & Assign</button>`;
+                const statusBadge = `<span class="status-badge ${request.status}">${request.status.replace('-', ' ')}</span>`;
+                const row = `<tr>
+                    <td>${foremanName}</td>
+                    <td>${request.jobSite}</td>
+                    <td>${materialName}</td>
+                    <td>${request.quantity} ${request.unit}</td>
+                    <td>${statusBadge}</td>
+                    <td>${actionsHtml}</td>
+                </tr>`;
+                tableBody.innerHTML += row;
+            });
+        }
+        
+        async function registerAndAssign(requestId) {
+            const request = appState.requests[requestId];
+            const newPrice = prompt(`Please enter the price per unit for ${request.materialName}:`);
+            if (newPrice !== null) {
+                const materialRef = db.collection('materials').doc();
+                await materialRef.set({
+                    name: request.materialName,
+                    unit: request.unit,
+                    price: parseFloat(newPrice)
+                });
+                await db.collection('requests').doc(requestId).update({
+                    materialId: materialRef.id,
+                    status: 'in-transit'
+                });
+                alert('Material registered and request status updated!');
+            }
+        }
+
+        function renderAccountingTable() {
+            const tableBody = document.querySelector('#accounting-table tbody');
+            tableBody.innerHTML = '';
+            let totalRequestedValue = 0;
+            let totalDeliveredValue = 0;
+            const materialBreakdown = {};
+
+            Object.values(appState.requests).forEach(request => {
+                if (request.materialId) {
+                    const material = appState.materials[request.materialId];
+                    if (material) {
+                        const value = material.price * request.quantity;
+                        if (!materialBreakdown[request.materialId]) {
+                            materialBreakdown[request.materialId] = {
+                                name: material.name,
+                                requested: 0,
+                                delivered: 0,
+                                value: 0
+                            };
+                        }
+
+                        materialBreakdown[request.materialId].requested += request.quantity;
+                        if (request.status === 'delivered') {
+                            materialBreakdown[request.materialId].delivered += request.quantity;
+                            totalDeliveredValue += value;
+                        }
+                        totalRequestedValue += value;
+                    }
+                }
+            });
+
+            document.getElementById('total-requested-value').innerText = `$${totalRequestedValue.toFixed(2)}`;
+            document.getElementById('total-delivered-value').innerText = `$${totalDeliveredValue.toFixed(2)}`;
+            
+            Object.values(materialBreakdown).forEach(breakdown => {
+                const row = `<tr><td>${breakdown.name}</td><td>${breakdown.requested}</td><td>${breakdown.delivered}</td><td>$${breakdown.value.toFixed(2)}</td></tr>`;
+                tableBody.innerHTML += row;
+            });
+        }
+        
+        async function updateRequestStatus(requestId, status) {
+            await db.collection('requests').doc(requestId).update({ status });
+        }
+
+        document.getElementById('material-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('material-name').value;
+            const unit = document.getElementById('material-unit').value;
+            const price = parseFloat(document.getElementById('material-price').value);
+            await db.collection('materials').add({ name, unit, price });
+            alert('Material added successfully!');
+            e.target.reset();
+        });
+        
+        document.getElementById('inventory-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const materialId = document.getElementById('inventory-material-select').value;
+            const quantity = parseInt(document.getElementById('inventory-quantity').value, 10);
+            
+            const inventoryRef = db.collection('inventory').doc(materialId);
+            const doc = await inventoryRef.get();
+            const currentQuantity = doc.exists ? doc.data().quantity : 0;
+            
+            await inventoryRef.set({ quantity: currentQuantity + quantity });
+            alert('Inventory updated!');
+            e.target.reset();
+        });
+
+        // --- Foreman Functions ---
+        function renderForemanJobs() {
+            const container = document.getElementById('foreman-jobs');
+            container.innerHTML = '';
+            Object.values(appState.jobSites).forEach(jobSite => {
+                const card = document.createElement('div');
+                card.className = 'job-card';
+                card.id = `job-site-${jobSite.id}`;
+                card.innerHTML = `
+                    <h3>${jobSite.name}</h3>
+                    <div class="tab-menu">
+                        <button class="tab-button active" onclick="showJobSiteTab('${jobSite.id}', 'tasks-panel', this)">Tasks</button>
+                        <button class="tab-button" onclick="showJobSiteTab('${jobSite.id}', 'materials-panel', this)">Materials</button>
+                        <button class="tab-button" onclick="showJobSiteTab('${jobSite.id}', 'manpower-panel', this)">Manpower</button>
+                    </div>
+                    <div class="three-panel-display">
+                        <div id="job-site-${jobSite.id}-tasks-panel" class="tab-content active">
+                            <h4>Tasks</h4>
+                            <form id="task-form-${jobSite.id}" onsubmit="handleTaskForm(event, '${jobSite.id}')">
+                                <input type="text" placeholder="Task Name" required>
+                                <button type="submit">Add Task</button>
+                            </form>
+                            <ul id="task-list-${jobSite.id}"></ul>
+                        </div>
+                        <div id="job-site-${jobSite.id}-materials-panel" class="tab-content">
+                            <h4>Materials</h4>
+                            <form id="material-request-form-${jobSite.id}" onsubmit="handleMaterialRequestForm(event, '${jobSite.id}')">
+                                <input type="text" id="foreman-material-name-${jobSite.id}" placeholder="Material Name" required>
+                                <input type="text" id="foreman-material-unit-${jobSite.id}" placeholder="Unit (e.g., bags, lbs)" required>
+                                <input type="number" id="foreman-material-quantity-${jobSite.id}" placeholder="Quantity" required>
+                                <button type="submit">Request Material</button>
+                            </form>
+                            <ul id="material-request-list-${jobSite.id}"></ul>
+                        </div>
+                        <div id="job-site-${jobSite.id}-manpower-panel" class="tab-content">
+                            <h4>Manpower</h4>
+                            <form id="manpower-form-${jobSite.id}" onsubmit="handleManpowerForm(event, '${jobSite.id}')">
+                                <input type="text" placeholder="Employee Name" required>
+                                <button type="submit">Add Manpower</button>
+                            </form>
+                            <ul id="manpower-list-${jobSite.id}"></ul>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(card);
+                renderJobSiteContent(jobSite.id);
+            });
+        }
+        
+        function showJobSiteTab(jobSiteId, tabName, button) {
+            const container = document.getElementById(`job-site-${jobSiteId}`);
+            container.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+            button.classList.add('active');
+            container.querySelectorAll('.tab-content').forEach(content => content.style.display = 'none');
+            document.getElementById(`job-site-${jobSiteId}-${tabName}`).style.display = 'block';
+        }
+        
+        function renderJobSiteContent(jobSiteId) {
+            const jobSite = appState.jobSites[jobSiteId];
+            if (!jobSite) return;
+
+            const taskList = document.getElementById(`task-list-${jobSiteId}`);
+            taskList.innerHTML = '';
+            jobSite.tasks.forEach(task => {
+                const listItem = document.createElement('li');
+                listItem.innerText = `${task.name}`;
+                if (task.status === 'completed') {
+                    listItem.style.textDecoration = 'line-through';
+                    listItem.style.color = '#7f8c8d';
+                }
+                const markDoneButton = `<button onclick="completeTask('${jobSiteId}', '${task.id}')">Done</button>`;
+                listItem.innerHTML += ` ${task.status === 'active' ? markDoneButton : ''}`;
+                taskList.appendChild(listItem);
+            });
+            
+            const materialsList = document.getElementById(`material-request-list-${jobSiteId}`);
+            materialsList.innerHTML = '';
+            Object.values(appState.requests).filter(req => req.jobSiteId === jobSiteId).forEach(req => {
+                const materialName = req.materialId ? appState.materials[req.materialId]?.name : req.materialName;
+                const statusBadge = `<span class="status-badge ${req.status}">${req.status.replace('-', ' ')}</span>`;
+                const listItem = document.createElement('li');
+                listItem.innerHTML = `${materialName} (${req.quantity} ${req.unit}) - ${statusBadge}`;
+                materialsList.appendChild(listItem);
+            });
+
+            const manpowerList = document.getElementById(`manpower-list-${jobSiteId}`);
+            manpowerList.innerHTML = '';
+            jobSite.manpower.forEach(employee => {
+                const listItem = document.createElement('li');
+                listItem.innerText = `${employee.name} (${employee.status})`;
+                manpowerList.appendChild(listItem);
+            });
+        }
+
+        async function addNewJobSite() {
+            const jobSiteName = prompt("Enter the name of the new job site:");
+            if (jobSiteName) {
+                const newJobSiteRef = db.collection('jobSites').doc();
+                await newJobSiteRef.set({ name: jobSiteName, tasks: [], manpower: [] });
+                alert('New job site added!');
+            }
+        }
+        
+        async function handleTaskForm(e, jobSiteId) {
+            e.preventDefault();
+            const taskName = e.target.querySelector('input').value;
+            const task = { id: Date.now(), name: taskName, status: 'active', userId: currentUser };
+            const jobSiteRef = db.collection('jobSites').doc(jobSiteId);
+            const doc = await jobSiteRef.get();
+            const tasks = doc.data().tasks || [];
+            await jobSiteRef.update({ tasks: [...tasks, task] });
+            e.target.reset();
+        }
+
+        async function handleMaterialRequestForm(e, jobSiteId) {
+            e.preventDefault();
+            const materialName = document.getElementById(`foreman-material-name-${jobSiteId}`).value;
+            const unit = document.getElementById(`foreman-material-unit-${jobSiteId}`).value;
+            const quantity = document.getElementById(`foreman-material-quantity-${jobSiteId}`).value;
+            
+            const material = Object.values(appState.materials).find(m => m.name.toLowerCase() === materialName.toLowerCase());
+            
+            const request = {
+                foremanId: currentUser,
+                jobSiteId,
+                jobSite: appState.jobSites[jobSiteId].name,
+                materialName: materialName,
+                unit: unit,
+                quantity: quantity,
+                status: 'pending'
+            };
+
+            if (material) {
+                request.materialId = Object.keys(appState.materials).find(key => appState.materials[key].name === materialName);
+            } else {
+                request.status = 'unregistered';
+            }
+
+            await db.collection('requests').add(request);
+            alert('Material request submitted!');
+            e.target.reset();
+        }
+        
+        async function handleManpowerForm(e, jobSiteId) {
+            e.preventDefault();
+            const employeeName = e.target.querySelector('input').value;
+            const employee = { name: employeeName, status: 'Clocked In' };
+            const jobSiteRef = db.collection('jobSites').doc(jobSiteId);
+            const doc = await jobSiteRef.get();
+            const manpower = doc.data().manpower || [];
+            await jobSiteRef.update({ manpower: [...manpower, employee] });
+            e.target.reset();
+        }
+
+        async function completeTask(jobSiteId, taskId) {
+            const jobSiteRef = db.collection('jobSites').doc(jobSiteId);
+            const doc = await jobSiteRef.get();
+            const tasks = doc.data().tasks.map(task => 
+                task.id == taskId ? { ...task, status: 'completed' } : task
+            );
+            await jobSiteRef.update({ tasks });
+            
+            const taskToLog = tasks.find(task => task.id == taskId);
+            await db.collection('legacy').add({
+                userId: currentUser,
+                jobSiteId: jobSiteId,
+                jobSiteName: appState.jobSites[jobSiteId].name,
+                taskName: taskToLog.name,
+                description: 'Task marked as done by foreman.',
+                timestamp: Date.now()
+            });
+        }
+
+        // --- Employee Functions ---
+        function renderDeliveryList() {
+            const list = document.getElementById('delivery-list');
+            list.innerHTML = '';
+            Object.values(appState.requests).forEach(req => {
+                if (req.status === 'in-transit') {
+                    const materialName = req.materialId ? appState.materials[req.materialId]?.name : req.materialName;
+                    const listItem = document.createElement('li');
+                    listItem.innerHTML = `
+                        <b>Site:</b> ${req.jobSite} <br>
+                        <b>Material:</b> ${materialName} (${req.quantity} ${req.unit})
+                        <button onclick="confirmDelivery('${req.id}')">Confirm Receipt</button>
+                    `;
+                    list.appendChild(listItem);
+                }
+            });
+            
+            const completedList = document.getElementById('completed-task-list');
+            completedList.innerHTML = '';
+            Object.values(appState.legacy).filter(task => task.userId === currentUser).forEach(task => {
+                const listItem = document.createElement('li');
+                listItem.innerText = `${task.jobSiteName}: ${task.taskName}`;
+                completedList.appendChild(listItem);
+            });
+        }
+
+        async function confirmDelivery(requestId) {
+            await db.collection('requests').doc(requestId).update({ status: 'delivered' });
+            alert('Delivery confirmed!');
+            
+            const request = appState.requests[requestId];
+            const material = appState.materials[request.materialId];
+            const legacyDescription = `Confirmed receipt of ${request.quantity} ${request.unit} of ${material.name} at ${request.jobSite}.`;
+            await db.collection('legacy').add({
+                userId: currentUser,
+                description: legacyDescription,
+                timestamp: Date.now(),
+                taskName: 'Material Delivery Confirmation'
+            });
+        }
+        
+        function showTab(tabId, button) {
+            document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+            document.querySelectorAll('.tab-button').forEach(el => el.classList.remove('active'));
+            document.getElementById(tabId).style.display = 'block';
+            button.classList.add('active');
+        }
+
+    </script>
+</body>
+</html>
